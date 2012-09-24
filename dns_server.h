@@ -1,3 +1,15 @@
+#include <sys/socket.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <netdb.h>
+#include <string.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <ctype.h>
+
+
+typedef struct sockaddr_in sockaddr_in;
+
 /* 
 	DNS structures
 */
@@ -19,10 +31,10 @@ typedef struct {
 	unsigned char ad:1;
 	unsigned char z:1;
 	unsigned char ra:1;
-	unsigned short qd_count;
+	unsigned short qu_count;
 	unsigned short an_count;
-	unsigned short ns_count;
-	unsigned short ar_count;
+	unsigned short authrr_count;
+	unsigned short addrr_count;
 } dns_header;
 
 /* dns question section format. This is prepended with a name */
@@ -45,3 +57,12 @@ typedef struct __attribute__ ((__packed__)) {
 	unsigned int ttl;
 	unsigned short data_len;
 } dns_rrhdr;
+
+void handler(int sig);
+int open_udp_socket();
+void paddr(unsigned char* a);
+sockaddr_in* bind_udp_socket(int udp_sock);
+int get_bitmask(int lobit, int hibit);
+void parse_dns(char* msg, int recvlen);
+dns_question* parse_queries(char* msg, int qu_count);
+dns_header* parse_header(char* msg);

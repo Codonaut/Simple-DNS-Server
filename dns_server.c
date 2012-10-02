@@ -10,9 +10,9 @@
 * 1) Write parse_queries() function to handle the actual structure of a dns query(variable question name length)
 *
 *
-*
-*
-*
+* QUESTION ***
+* 1) Should the query type be 1?
+* 2) No hosts file on site
 * /
 
 /* Prints stack trace upon segmentation fault */
@@ -48,7 +48,7 @@ void paddr(unsigned char *a) {
 int get_bitmask(int lobit, int hibit) {
     int mask = 0;
     int i;
-    for (i=lobit+1; i<=hibit+1; i++)
+    for (i=lobit; i<=hibit; i++)
         mask += (1 << i);
     return mask;
 }
@@ -72,8 +72,13 @@ sockaddr_in* bind_udp_socket(int udp_sock) {
 
 void parse_dns(char* msg, int recvlen) {
     dns_header* header = parse_header(msg);
+    print_header(header);
     dns_question* query = parse_queries(msg, header->qu_count);
-    
+    msg = attach_answer(msg, header, query);
+}
+
+void print_header(dns_header* head) {
+    printf("id: %d\nrd: %d\ntc: %d\nopcode: %d\nqr: %d\nqu_count: %d\n", head->id, head->rd, head->tc, head->opcode, head->qr, head->qu_count);
 }
 
 
@@ -87,87 +92,130 @@ dns_question* parse_queries(char* msg, int qu_count) {
     int qu_name_size = 0;   // Size in bytes of the query name
     int last_write_index = 0;   // Index of the last write into qu_name
 
-    /*
-    while (msg[qu_offset + j] != 0) {
-        printf("%d = %c,  j = %d\n", msg[qu_offset + j], msg[qu_offset + j], j);
-        j++;
+    for (pos=0; pos < 40; pos++) {
+        //printf("char %d = %c\n", msg[pos], msg[pos]);
     }
-    printf("\n");
-    */
+
+    for (pos=qu_offset; qu_snagged < qu_count; pos++) {
+        if (msg[pos] == 0) {
+
+            qu_name = (char*) realloc(qu_name, sizeof(char) * (pos + 1));
+            for (j=0; j<pos; j++)
+                qu_name[j] = msg[qu_offset + j];
+            qu_name_size = pos - qu_offset;
+            qu_name[qu_name_size - 1] = '\0';
+
+            (queries + qu_snagged)->qtype = msg[qu_offset + pos + 1] + msg[qu_offset + pos + 2];
+            (queries + qu_snagged)->qclass = msg[qu_offset + pos + 3] + msg[qu_offset + pos + 4];
+            (queries + qu_snagged)->qname = qu_name;
+
+            qu_snagged++;   
+        }
+    }
 
     // Loop through the message until all queries are snagged
-    for (pos=0; qu_snagged < qu_count; ) {
-        printf("Looking at char %d, pos=%d\n", msg[qu_offset + pos], pos);
+    /*for (pos=0; qu_snagged < qu_count; ) {
+        //printf("Looking at char %d, pos=%d\n", msg[qu_offset + pos], pos);
         if (!isalpha(msg[qu_offset + pos]) && msg[qu_offset + pos] != 0) {
             // If the message byte is a number telling how many characters follow then
             // Add that number to the size, reallocate qu_name, and add those characters to qu_name
-            printf("Adding %d to qu_name_size\n", msg[qu_offset + pos]);
+
+            //printf("Adding %d to qu_name_size\n", msg[qu_offset + pos]);
             seg_size = msg[qu_offset + pos];
             qu_name_size += seg_size;
             qu_name = (char *) realloc(qu_name, sizeof(char) * qu_name_size);
             
             // Add characters to qu_name
-            for (j=pos+1; j <= seg_size+pos; j++) {
-                printf("Writing char %d to %d\n", msg[qu_offset + j], last_write_index);
+            for (j=pos + 1; j <= seg_size+pos; j++) {
+                //printf("Writing char %d to %d\n", msg[qu_offset + j], last_write_index);
                 qu_name[last_write_index] = msg[qu_offset + j];
                 last_write_index ++;
             }
 
-            printf("qu_name_size = %d\n", qu_name_size);
+            //printf("qu_name_size = %d\n", qu_name_size);
             // Increment pos by size
             pos += msg[qu_offset + pos] + 1;
         } else {
-            printf("ENTERING ELSE\n");
             // A zero was encountered, and the query type and class are next
+            
             (queries + qu_snagged)->qtype = msg[qu_offset + pos + 1] + msg[qu_offset + pos + 2];
             (queries + qu_snagged)->qclass = msg[qu_offset + pos + 3] + msg[qu_offset + pos + 4];
 
             // Increment the count of queries snagged, and increment the qu_offset
             qu_snagged++;
-            qu_offset = pos + 4;
+            qu_offset = pos + 5;
             pos = 0;
         }
-    }
-    qu_name_size++;
-    qu_name = (char *) realloc(qu_name, sizeof(char) * qu_name_size);
-    qu_name[qu_name_size - 1] = '\0';
+    }*/
+    //qu_name_size++;
+    //qu_name = (char *) realloc(qu_name, sizeof(char) * qu_name_size);
+
+    for (j=0; j<strlen(qu_name); j++)
+        printf("char %d = %c\n", qu_name[j], qu_name[j]);
 
     printf("name: %s\n", qu_name);
     printf("name size: %d\n", qu_name_size);
+    printf("qclass: %d\nqtype: %d\n", queries->qclass, queries->qtype);
+}
 
-    /*
-    printf("\n");
-    for (i=0; i<qu_count; i++) {
-        (queries + i)->qtype = msg[qu_offset + 2+ i] + msg[qu_offset + 3 + i];
-        (queries + i)->qclass = msg[qu_offset + 4 + i] + msg[qu_offset + 5 + i];
-        printf("qtype: %d\n", (queries + i)->qtype);
-        printf("qclass: %d\n", (queries + i)->qclass);
-    }*/
+
+void modify_headers(dns_header* header) {
+    header->qr = 1;
+    header->aa = 1;
+    header->tc = 0;
+    header->ra = 0;
+    header->rcode = 0;
+    header->an_count = htons(1);
+}
+
+
+char* attach_answer(char* msg, dns_header* header, dns_question* question) {
+    modify_headers(header);
+    int name_len = strlen(question->qname);
+    int ans_len = name_len + 14;
+    char* answer = (char *) malloc(sizeof(char) * ans_len);
+    answer[0] = question->qname;
+    answer[name_len] = htons(1);
+    answer[name_len + 2] = htons(1);
+    answer[name_len + 4] = htonl(86400);
+    answer[name_len + 8] = htons(4);
+    answer[name_len + 10] = htonl(5300);
+    msg = (char *) realloc(msg, strlen(msg) + strlen(answer));
+    msg += answer;
+    return msg;
 }
 
 
 dns_header* parse_header(char* msg) {
     dns_header* header = (dns_header *) malloc(sizeof(dns_header));
     header->id = msg[0] + msg[1];
-    header->qr = msg[2] & get_bitmask(7, 7) >> 8;
-    printf("QR: %d\n", header->qr);
-    header->opcode = msg[2] & get_bitmask(3,6) >> 4;
-    header->aa = msg[2] & get_bitmask(2, 2) >> 3;
-    header->tc = msg[2] & get_bitmask(1, 1) >> 2;
-    header->rd = msg[2] & get_bitmask(0, 0) >> 1;
-    header->ra = msg[3] & get_bitmask(7, 7) >> 8;
-    header->z = msg[3] & get_bitmask(6, 6) >> 7;
-    header->ad = msg[3] & get_bitmask(5, 5) >> 6;
-    header->cd = msg[3] & get_bitmask(4, 4) >> 5;
-    header->rcode = msg[3] & get_bitmask(0, 3) >> 4;
+    header->rd = msg[2];
+    header->rcode = msg[3];
     header->qu_count = msg[4] + msg[5];
-    printf("qu_count: %d\n", header->qu_count);
-    printf("rd: %d\n", header->rd);
     header->an_count = msg[6] + msg[7];
     header->authrr_count = msg[8] + msg[9];
     header->addrr_count = msg[10] + msg[11];
-    printf("an_count: %d\n", header->an_count);
-    printf("authrr_count: %d\n", header->authrr_count);
+    /*header->id = msg[0] + msg[1];
+    header->qr = (msg[2] & get_bitmask(7, 7)) >> 8;*/
+    /*printf("bitmask: %d\n", get_bitmask(7,7));
+    printf("QR: %d\n", header->qr);*/
+    /*header->opcode = (msg[2] & get_bitmask(3,6)) >> 4;
+    header->aa = (msg[2] & get_bitmask(2, 2)) >> 3;
+    header->tc = (msg[2] & get_bitmask(1, 1)) >> 2;
+    header->rd = (msg[2] & get_bitmask(0, 0)) >> 1;
+    header->ra = (msg[3] & get_bitmask(7, 7)) >> 8;
+    header->z = (msg[3] & get_bitmask(6, 6)) >> 7;
+    header->ad = (msg[3] & get_bitmask(5, 5)) >> 6;
+    header->cd = (msg[3] & get_bitmask(4, 4)) >> 5;
+    header->rcode = (msg[3] & get_bitmask(0, 3)) >> 4;
+    header->qu_count = msg[4] + msg[5];*/
+    /*printf("qu_count: %d\n", header->qu_count);
+    printf("rd: %d\n", header->rd);*/
+    /*header->an_count = msg[6] + msg[7];
+    header->authrr_count = msg[8] + msg[9];
+    header->addrr_count = msg[10] + msg[11];*/
+    /*printf("an_count: %d\n", header->an_count);
+    printf("authrr_count: %d\n", header->authrr_count);*/
     return header;
 }
 

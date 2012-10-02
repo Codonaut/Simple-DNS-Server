@@ -45,6 +45,7 @@ typedef struct {
 typedef struct {
 	unsigned short qtype;
 	unsigned short qclass;
+	char* qname;
 } dns_question;
 
 /* DNS resource record format */

@@ -10,6 +10,24 @@
 
 typedef struct sockaddr_in sockaddr_in;
 
+/* Linked list for hosts storage */
+struct HostNode {
+	struct HostNode* next;
+	char* name;
+	char* address;
+};
+
+typedef struct HostNode HostNode;
+
+HostNode* createLList(char* name, char* address);
+void addHost(HostNode* head, char* name, char* address);
+void printList(HostNode* head);
+void fillList(HostNode* head, FILE* hosts);
+FILE* gotoNextLine(FILE* hosts);
+
+// Searches the LList for the given host name, returning the address if found, -1 if not found
+char* getAddress(HostNode* head, char* name);
+
 /* 
 	DNS structures
 */
@@ -46,6 +64,8 @@ typedef struct {
 	unsigned short qtype;
 	unsigned short qclass;
 	char* qname;
+	char* qnames;
+	int qname_len;
 } dns_question;
 
 /* DNS resource record format */
@@ -64,6 +84,9 @@ int open_udp_socket();
 void paddr(unsigned char* a);
 sockaddr_in* bind_udp_socket(int udp_sock);
 int get_bitmask(int lobit, int hibit);
-void parse_dns(char* msg, int recvlen);
+void parse_dns(char* msg, int recvlen, int socket, struct sockaddr* address, HostNode* list);
 dns_question* parse_queries(char* msg, int qu_count);
 dns_header* parse_header(char* msg);
+void modify_header(dns_header* header, char* msg);
+char* attach_answer(char* msg, dns_header* header, dns_question* question, int* msg_len, int addr);
+void print_header(dns_header* head);
